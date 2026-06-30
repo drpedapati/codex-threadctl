@@ -19,4 +19,6 @@
 
 ## Reporting issues
 
-Open a private issue or contact the repository owner if this repository is private.
+Open a GitHub issue for non-sensitive bugs.
+
+For sensitive reports, contact the repository owner privately before posting details publicly.
