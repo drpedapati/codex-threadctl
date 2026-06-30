@@ -94,6 +94,26 @@ Receipts:
 
 After sending a packet, return control to the source thread unless the user explicitly asks you to watch the target turn live. Do not leave the source thread blocked on long specialist work.
 
+For coordinator threads, treat packets as a queue:
+
+1. Present one packet.
+2. Get the control move or make the approved dispatch.
+3. Close the packet when its completion condition is true or when it is handed off.
+4. Surface the next best packet.
+5. If no packet is ready, state what evidence or event is missing.
+
+Use event-based heartbeat by default. Do not simulate a timer in the source thread. Bring a new packet when the user asks for status, a target thread reports evidence or a blocker, a dispatch fails, a lane changes, or a risk needs attention.
+
+Closeout examples:
+
+```text
+Packet closed. Next packet: <short title>.
+```
+
+```text
+No packet ready. Waiting for <owner/evidence/event>.
+```
+
 Use `last` after a handoff when you need turn-level readback:
 
 ```bash
