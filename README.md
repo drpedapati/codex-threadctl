@@ -217,6 +217,25 @@ Example:
 Mara evidence is still pending, so the merge train stays blocked. The useful adjacent packet is merge/rebase preparation: confirm the PR order, name the merge owner, and pre-stage the conflict plan without merging anything.
 ```
 
+### Update coordinator operating rules consistently
+
+When a project changes how coordinator threads communicate, dispatch, queue packets, run heartbeat, or sweep for next work, make the change in every place that owns the behavior.
+
+Use this workflow:
+
+1. Restate the change as one actionable packet.
+2. Update the project-local coordinator template first, if one exists.
+3. Decide whether the behavior is generic to `codex-threadctl` handoffs.
+4. If generic, update both:
+   - `README.md`
+   - `skills/codex-threadctl/SKILL.md`
+5. Validate any project-local routing or map checks.
+6. Review the public repo diff.
+7. Commit and push the `codex-threadctl` change.
+8. Report back as one housekeeping packet with the commit hash, validation result, and next packet.
+
+Do not leave the public thread-control guidance stale when the change affects `send`, handoff shape, packet queues, heartbeat, or project sweep behavior.
+
 Dry-run the rename:
 
 ```bash

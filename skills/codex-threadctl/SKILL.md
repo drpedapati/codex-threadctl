@@ -121,6 +121,8 @@ The sweep should produce one of:
 - a risk packet that needs attention before the blocker clears
 - a clear statement that no safe adjacent work should move
 
+When a project changes how coordinator threads communicate, dispatch, queue packets, run heartbeat, or sweep for next work, update the project-local coordinator template first if one exists. If the behavior is generic to `codex-threadctl` handoffs, update both `README.md` and this skill file in the public repo, validate project-local routing checks, review the diff, commit, push, and report back as one housekeeping packet. Do not leave the public guidance stale when the change affects `send`, handoff shape, packet queues, heartbeat, or project sweep behavior.
+
 Closeout examples:
 
 ```text
