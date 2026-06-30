@@ -152,6 +152,87 @@ codex-threadctl rename \
   --confirm
 ```
 
+## ClinVision Leading Edge usage
+
+ClinVision uses `codex-threadctl` as the mobile-safe bridge for managing Codex Desktop threads when the app thread tools are unavailable from the current surface.
+
+The main project that drove this tool is the Leading Edge worktree group:
+
+```text
+/Users/ernie/Documents/GitHub/clinvision-v2-leading-edge-worktrees
+```
+
+In that group, thread names carry routing status in the first four characters so they remain readable in a narrow mobile sidebar:
+
+```text
+LE-M = Leading Edge mapped worktree lane
+LE-T = Leading Edge thread-only lane
+```
+
+Use that distinction before deciding how to work:
+
+| Prefix | Meaning | Developer behavior |
+| --- | --- | --- |
+| `LE-M` | The thread maps to a branch and worktree folder. | Find the entry in `role-worktree-map.json`, verify the folder, then edit only in that mapped worktree. |
+| `LE-T` | The thread is coordination/advisory/roundtable only. | Use it for discussion, handoff, planning, and status. Do not assume it owns a code folder. |
+
+The current coordinator thread is:
+
+```text
+LE-T | Naomi | Control Tower
+019f1932-5f10-7933-abb2-8acb8b324dec
+/Users/ernie/Documents/GitHub/clinvision-v2-leading-edge-worktrees
+```
+
+Naomi Control Tower routes work across the role lanes. Control Tower can request status, hand off work, and coordinate sequencing, but it does not replace the specialist owners. Mara still owns build/deploy truth, Vivian owns role/worktree governance, Vera owns control-panel UX, Cal owns simplification review, Rafi owns observability/profiling lanes, and Julian is currently thread-only loop engineering.
+
+Before sending to Control Tower, use guarded send:
+
+```bash
+codex-threadctl send \
+  --id 019f1932-5f10-7933-abb2-8acb8b324dec \
+  --expect-title 'LE-T | Naomi | Control Tower' \
+  --expect-cwd /Users/ernie/Documents/GitHub/clinvision-v2-leading-edge-worktrees \
+  --message-file handoff.md \
+  --receipt threadctl-receipt.json
+```
+
+Before creating a new Leading Edge thread, use `le-create`:
+
+```bash
+codex-threadctl le-create \
+  --role Vivian \
+  --lane 'Role Map Cleanup' \
+  --message-file kickoff.md
+```
+
+Then immediately decide whether the thread is mapped or thread-only:
+
+```text
+Mapped implementation lane -> rename to LE-M and add kind: mapped-worktree
+Coordination-only lane      -> rename to LE-T and add kind: thread-only
+```
+
+The source-controlled map is:
+
+```text
+/Users/ernie/Documents/GitHub/clinvision-v2-leading-edge-worktrees/role-worktree-map.json
+```
+
+Validate it with:
+
+```bash
+/Users/ernie/Documents/GitHub/clinvision-v2-leading-edge-worktrees/verify-role-map.py --json
+```
+
+The developer correspondence explaining this system is published at:
+
+```text
+http://data1.netbird.selfhosted:8890/c/206-leading-edge-thread-routing-control-tower/
+```
+
+The practical rule is simple: `codex-threadctl` can create and send messages, but it should not become a hidden workflow engine. Use it to keep the visible Codex thread map coherent, guarded, and auditable.
+
 ## Commands
 
 ### `list`

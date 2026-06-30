@@ -144,6 +144,53 @@ codex-threadctl send \
   --receipt /tmp/threadctl-handoff-receipt.json
 ```
 
+## ClinVision Leading Edge Pattern
+
+For ClinVision Leading Edge work, thread names use a compact routing prefix:
+
+```text
+LE-M = mapped worktree lane
+LE-T = thread-only coordination/advisory/roundtable lane
+```
+
+Read this before creating or renaming Leading Edge threads:
+
+```text
+http://data1.netbird.selfhosted:8890/c/206-leading-edge-thread-routing-control-tower/
+```
+
+Current Control Tower thread:
+
+```text
+title: LE-T | Naomi | Control Tower
+id: 019f1932-5f10-7933-abb2-8acb8b324dec
+cwd: /Users/ernie/Documents/GitHub/clinvision-v2-leading-edge-worktrees
+```
+
+Use guarded sends for Control Tower:
+
+```bash
+codex-threadctl send \
+  --id 019f1932-5f10-7933-abb2-8acb8b324dec \
+  --expect-title 'LE-T | Naomi | Control Tower' \
+  --expect-cwd /Users/ernie/Documents/GitHub/clinvision-v2-leading-edge-worktrees \
+  --message-file /tmp/handoff.md \
+  --receipt /tmp/threadctl-handoff-receipt.json
+```
+
+After creating a Leading Edge thread, decide immediately:
+
+```text
+Mapped implementation lane -> rename to LE-M and update role-worktree-map.json with kind: mapped-worktree.
+Thread-only lane -> rename to LE-T and update role-worktree-map.json with kind: thread-only.
+```
+
+Validate the map:
+
+```bash
+/Users/ernie/Documents/GitHub/clinvision-v2-leading-edge-worktrees/verify-role-map.py --json
+```
+
 ## Implementation Notes
 
 The helper starts `codex app-server --stdio`, sends `initialize`, then sends local app-server JSON-RPC methods such as `thread/list`, `thread/read`, `thread/resume`, `thread/start`, `turn/start`, and `thread/name/set`. It does not rely on the mobile app MCP thread tool handler.
