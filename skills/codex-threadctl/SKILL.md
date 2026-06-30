@@ -104,6 +104,23 @@ For coordinator threads, treat packets as a queue:
 
 Use event-based heartbeat by default. Do not simulate a timer in the source thread. Bring a new packet when the user asks for status, a target thread reports evidence or a blocker, a dispatch fails, a lane changes, or a risk needs attention.
 
+If the next packet would only say "wait," run a quick project sweep first. The sweep is not a dashboard for the user; it is how a coordinator chooses the next useful packet.
+
+Sweep for:
+
+- current routing/thread/worktree state
+- active PR or branch stack and merge order
+- latest target-thread receipt or last-turn summary
+- blockers and do-not-touch constraints
+- evidence required before merge, deploy, or rebase
+- adjacent prep work that does not bypass the blocker
+
+The sweep should produce one of:
+
+- an adjacent prep packet that can safely move now
+- a risk packet that needs attention before the blocker clears
+- a clear statement that no safe adjacent work should move
+
 Closeout examples:
 
 ```text
