@@ -1,6 +1,6 @@
 # codex-threadctl
 
-`codex-threadctl` is a small local CLI for managing Codex Desktop thread titles when you are working from a surface that cannot call the normal app thread tools.
+`codex-threadctl` is a small local CLI for managing Codex Desktop threads when you are working from a surface that cannot call the normal app thread tools.
 
 The motivating case is mobile: Codex may show tools such as `list_threads` or `set_thread_title`, but the call fails with:
 
@@ -8,7 +8,7 @@ The motivating case is mobile: Codex may show tools such as `list_threads` or `s
 No handler registered for tool: list_threads
 ```
 
-If you still have shell access to the same Mac that runs Codex Desktop, `codex-threadctl` talks to the local Codex app-server over stdio and performs a narrow set of thread metadata operations.
+If you still have shell access to the same Mac that runs Codex Desktop, `codex-threadctl` talks to the local Codex app-server over stdio and performs a narrow set of thread operations.
 
 ## What this is for
 
@@ -16,18 +16,18 @@ Use this when you need to:
 
 - Find a Codex thread by title or preview text.
 - Read one thread's current title and project cwd.
+- Create a new project-scoped thread with an initial kickoff message.
+- Send a message to an existing thread.
 - Rename a thread safely, for example to add a PR number or ownership label.
 - Do the above from a mobile-driven Codex session by running shell commands on the local Mac.
 
-Do not use it as a general Codex automation platform. It is deliberately small.
+Do not use it as a general Codex automation platform. It is deliberately small and local-only.
 
 ## What it does not do
 
 `codex-threadctl` intentionally does not:
 
-- Create threads.
 - Fork threads.
-- Send messages to threads.
 - Archive or delete threads.
 - Expose a network service.
 - Manage remote hosts.
@@ -38,6 +38,8 @@ It only uses the local Codex app-server methods:
 
 - `thread/list`
 - `thread/read`
+- `thread/start`
+- `turn/start`
 - `thread/name/set`
 
 ## Requirements
@@ -89,6 +91,23 @@ Read the exact thread:
 
 ```bash
 codex-threadctl read --id 019...
+```
+
+Create a project-scoped thread with a kickoff:
+
+```bash
+codex-threadctl create \
+  --cwd /absolute/project/root \
+  --title 'LE | Naomi | Project Coordinator Manager' \
+  --message-file kickoff.md
+```
+
+Send a follow-up to an existing thread:
+
+```bash
+codex-threadctl send \
+  --id 019... \
+  --message-file handoff.md
 ```
 
 Dry-run the rename:
@@ -164,6 +183,57 @@ Use JSON when another script needs the result:
 codex-threadctl read --id 019... --json
 ```
 
+### `create`
+
+Create a new thread, set its title, and start a kickoff turn:
+
+```bash
+codex-threadctl create \
+  --cwd /absolute/path/to/project \
+  --title 'LE | Role | Lane Name' \
+  --message-file kickoff.md
+```
+
+Use inline text for short messages:
+
+```bash
+codex-threadctl create \
+  --cwd /absolute/path/to/project \
+  --title 'LE | Roundtable | SQLite Planning' \
+  --message 'Please orient read-only and report current project state.'
+```
+
+`create` waits for the kickoff turn to complete before exiting. This is intentional: the local app-server process owns the turn lifecycle, so fire-and-forget exits can leave no durable thread.
+
+JSON output is available for scripts:
+
+```bash
+codex-threadctl create \
+  --cwd /absolute/path/to/project \
+  --title 'LE | Role | Lane Name' \
+  --message-file kickoff.md \
+  --json
+```
+
+### `send`
+
+Send a message to an existing thread:
+
+```bash
+codex-threadctl send --id 019... --message-file handoff.md
+```
+
+When `--cwd` is omitted, `send` reads the target thread and uses that thread's cwd. Override it only when you know the thread metadata is incomplete:
+
+```bash
+codex-threadctl send \
+  --id 019... \
+  --cwd /absolute/path/to/project \
+  --message 'Status request'
+```
+
+Like `create`, `send` waits for completion before exiting.
+
 ### `rename`
 
 Rename has three safeguards:
@@ -214,9 +284,19 @@ When mobile Codex cannot execute app thread tools:
    codex-threadctl read --id 019...
    ```
 
-5. Dry-run the rename with `--expect-current`.
+5. Create or send only when you intend to start a real Codex turn:
 
-6. Apply with `--confirm`.
+   ```bash
+   codex-threadctl create --cwd /absolute/project/root --title 'LE | Role | Lane' --message-file kickoff.md
+   ```
+
+   ```bash
+   codex-threadctl send --id 019... --message-file handoff.md
+   ```
+
+6. Dry-run the rename with `--expect-current`.
+
+7. Apply with `--confirm`.
 
 ## Installing the Codex skill
 
@@ -258,6 +338,10 @@ This should not happen when using `codex-threadctl`; the tool sends `initialize`
 
 Expected. Use `--dry-run` first, then repeat with `--confirm`.
 
+### `create` or `send` waits longer than expected
+
+Expected for long-running prompts. The command waits so the started turn can persist correctly. Use shorter kickoff/handoff messages when you need fast mobile-safe thread coordination.
+
 ### Current title mismatch
 
 Expected when the thread was already renamed or you copied stale context. Run `read` again and decide whether the new current title is the one you intended to mutate.
@@ -266,7 +350,7 @@ Expected when the thread was already renamed or you copied stale context. Run `r
 
 `codex-threadctl` is local-only. It starts `codex app-server --stdio` as a child process and communicates through stdin/stdout. It does not open ports, store tokens, read credentials, or run a daemon.
 
-The tool can rename local Codex thread metadata. Treat that as a real mutation. Use `--dry-run` and `--expect-current`.
+The tool can create threads, send messages, and rename local Codex thread metadata. Treat those as real mutations. Use read-only commands first, and use rename `--dry-run` plus `--expect-current`.
 
 ## Development
 
