@@ -60,10 +60,31 @@ codex-threadctl send \
   --id 019... \
   --expect-title 'LE | Role | Lane' \
   --expect-cwd /absolute/project/root \
-  --message-file handoff.md
+  --message-file handoff.md \
+  --wait-timeout 10m
 ```
 
 `create` and `send` wait for the turn to complete before exiting. Keep kickoff and handoff messages concise when you need a fast mobile-safe coordination update.
+
+For `send`, use bounded waits when the target may do real work:
+
+```bash
+codex-threadctl send \
+  --id 019... \
+  --message-file handoff.md \
+  --wait-timeout 10m
+```
+
+Use dispatch-only mode when the source thread should return control quickly:
+
+```bash
+codex-threadctl send \
+  --id 019... \
+  --message-file handoff.md \
+  --no-wait
+```
+
+`send` delivery is not the same as work success. If a send returns `started`, `wait_timeout`, or `interrupted`, run `last` and verify repo, PR, runtime, or evidence truth before redispatching.
 
 For coordinator handoffs, use a single actionable packet. Do not send a broad dashboard unless the user explicitly asks for one.
 
@@ -228,6 +249,8 @@ Goal chain:
 ```
 
 The user-behavior line is required for meaningful alignment. If the handoff cannot name what a user, reviewer, operator, developer, or coordinator can do differently because of the packet, park it, rewrite it, or convert it into a challenge/review packet.
+
+When packet selection is getting too local, run a production-distance reconstruction before sending another packet. The reconstruction should map current action to proximal capability, user behavior, and North Star outcome; list production components, evidence, gaps, blockers, sequencing, and the candidate next packet. Do not paste the full map by default.
 
 ## ClinVision Leading Edge Pattern
 

@@ -129,7 +129,8 @@ codex-threadctl send \
   --id 019... \
   --expect-title 'LE | Naomi | Project Coordinator Manager' \
   --expect-cwd /absolute/project/root \
-  --message-file handoff.md
+  --message-file handoff.md \
+  --wait-timeout 10m
 ```
 
 ### Write handoffs as single packets
@@ -177,6 +178,25 @@ Wait for evidence
 
 Avoid using `send` as a hidden workflow engine. Dispatch the packet, write a receipt when useful, then return control to the source thread unless the user explicitly asks you to watch the target thread live.
 
+`send` delivery is not the same as work success. A turn can land and do useful work even if the local waiter times out or the target turn ends as `interrupted`. Use `--wait-timeout` for bounded waits, or `--no-wait` when you only want to dispatch and then do explicit readback.
+
+After an ambiguous send, check:
+
+```bash
+codex-threadctl doctor
+codex-threadctl last --id <thread-id> --json
+git -C <worktree> status --short --branch
+gh pr view <number> --json headRefOid,baseRefName,mergeStateStatus,isDraft
+```
+
+Classify the outcome from durable state:
+
+- `completed`: normal terminal turn.
+- `interrupted + no durable side effects`: resume or redispatch cautiously.
+- `interrupted + local dirty work`: send a continuation packet; do not restart.
+- `interrupted + pushed/PR clean`: close the packet from repo/PR/evidence truth.
+- `started` or `wait_timeout`: delivery is not work success; run readback and external checks.
+
 ### Align packets to the project North Star
 
 If a project has a local North Star, product charter, PRD replacement, or mission document, coordinator packets should align to it before dispatch. Do not use alignment language to justify busywork after the fact.
@@ -203,6 +223,32 @@ Ask:
 - Does this need a simplification/product challenge before it moves?
 
 If the packet cannot answer those questions, park it, rewrite it, or convert it into a challenge/review packet.
+
+### Reconstruct production distance
+
+When a coordinator is getting stuck in local activity, run a production-distance reconstruction before choosing the next packet. This is a planning mode, not a dashboard by default.
+
+Conceptual command:
+
+```bash
+naomi production-distance \
+  --north-star PROJECT_NORTH_STAR.md \
+  --scope pilot \
+  --format packet-map
+```
+
+The map should include:
+
+- deployed/usable North Star target
+- distal goals and proximal capabilities
+- production components
+- current evidence and evidence grade
+- gaps, blockers, and owners
+- sequencing: first, parallel, parked, do-not-touch
+- behavior map: current action -> capability -> user behavior -> North Star
+- candidate next packet
+
+Use it to answer: what is the shortest evidenced path to a real user safely using the product?
 
 ### Run coordinator threads as packet queues
 
@@ -485,7 +531,8 @@ codex-threadctl send \
   --id 019... \
   --expect-title 'LE | Role | Lane Name' \
   --expect-cwd /absolute/path/to/project \
-  --message-file handoff.md
+  --message-file handoff.md \
+  --wait-timeout 10m
 ```
 
 Use `--expect-title` and `--expect-cwd` whenever possible. They fail closed when mobile context is stale.
@@ -499,7 +546,7 @@ codex-threadctl send \
   --message 'Status request'
 ```
 
-Like `create`, `send` waits for completion before exiting.
+Like `create`, `send` waits for completion before exiting. Use `--wait-timeout 10m` to bound that wait, or `--no-wait` to start the turn and return immediately. A `started`, `wait_timeout`, or `interrupted` result requires `last` readback and external repo/PR/evidence checks before you call the work done.
 
 ### `le-create`
 

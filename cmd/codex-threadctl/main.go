@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-const version = "0.4.0"
+const version = "0.5.0"
 
 const leadingEdgeCwd = "/Users/ernie/Documents/GitHub/clinvision-v2-leading-edge-worktrees"
 
@@ -145,7 +145,7 @@ func usage() {
   codex-threadctl last --id THREAD_ID [--json]
   codex-threadctl create --cwd PATH --title TITLE (--message TEXT|--message-file PATH) [--receipt PATH] [--json]
   codex-threadctl le-create --role ROLE --lane LANE (--message TEXT|--message-file PATH) [--cwd PATH] [--receipt PATH] [--json]
-  codex-threadctl send --id THREAD_ID (--message TEXT|--message-file PATH) [--expect-title TITLE] [--expect-cwd PATH] [--cwd PATH] [--receipt PATH] [--json]
+  codex-threadctl send --id THREAD_ID (--message TEXT|--message-file PATH) [--expect-title TITLE] [--expect-cwd PATH] [--cwd PATH] [--receipt PATH] [--wait-timeout DURATION|--no-wait] [--json]
   codex-threadctl rename --id THREAD_ID --name TITLE [--expect-current TITLE] [--receipt PATH] [--dry-run|--confirm]
   codex-threadctl doctor [--json]
   codex-threadctl version
@@ -423,9 +423,17 @@ func runSend(args []string) error {
 	message := fs.String("message", "", "message text")
 	messageFile := fs.String("message-file", "", "path to message text")
 	receiptPath := fs.String("receipt", "", "optional JSON receipt path")
+	waitTimeout := fs.Duration("wait-timeout", 10*time.Minute, "maximum time to wait for turn completion")
+	noWait := fs.Bool("no-wait", false, "start the turn and return without waiting for completion")
 	asJSON := fs.Bool("json", false, "emit JSON result")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *noWait && *waitTimeout != 10*time.Minute {
+		return errors.New("send accepts --no-wait or --wait-timeout, not both")
+	}
+	if *waitTimeout < 0 {
+		return errors.New("send requires --wait-timeout >= 0")
 	}
 	if *id == "" {
 		return errors.New("send requires --id")
@@ -437,7 +445,14 @@ func runSend(args []string) error {
 	if strings.TrimSpace(text) == "" {
 		return errors.New("send requires a non-empty --message or --message-file")
 	}
-	session, err := startSession(60 * time.Minute)
+	sessionTimeout := *waitTimeout + 30*time.Second
+	if *noWait {
+		sessionTimeout = 60 * time.Second
+	}
+	if sessionTimeout < 60*time.Second {
+		sessionTimeout = 60 * time.Second
+	}
+	session, err := startSession(sessionTimeout)
 	if err != nil {
 		return err
 	}
@@ -458,7 +473,7 @@ func runSend(args []string) error {
 		return errors.New("send requires --cwd because target thread has no cwd")
 	}
 
-	turnStatus, err := session.startTurn(*id, targetCwd, text)
+	turnStatus, err := session.startTurnWithOptions(*id, targetCwd, text, !*noWait, *waitTimeout)
 	if err != nil {
 		return err
 	}
@@ -480,6 +495,9 @@ func runSend(args []string) error {
 	fmt.Printf("title\t%s\n", displayName(thread.Name))
 	fmt.Printf("cwd\t%s\n", targetCwd)
 	fmt.Printf("turn\t%s\n", turnStatus)
+	if turnStatus == "wait_timeout" || turnStatus == "interrupted" || turnStatus == "started" {
+		fmt.Fprintln(os.Stderr, "note: send delivery is not work success; run codex-threadctl last and verify repo/PR/evidence truth")
+	}
 	return nil
 }
 
@@ -825,6 +843,10 @@ func (s *appSession) resumeThread(id string) (threadSummary, error) {
 }
 
 func (s *appSession) startTurn(threadID, cwd, text string) (string, error) {
+	return s.startTurnWithOptions(threadID, cwd, text, true, 0)
+}
+
+func (s *appSession) startTurnWithOptions(threadID, cwd, text string, wait bool, waitTimeout time.Duration) (string, error) {
 	if _, err := s.request("turn/start", map[string]any{
 		"threadId": threadID,
 		"cwd":      cwd,
@@ -838,7 +860,33 @@ func (s *appSession) startTurn(threadID, cwd, text string) (string, error) {
 	}); err != nil {
 		return "", err
 	}
+	if !wait {
+		return "started", nil
+	}
+	if waitTimeout > 0 {
+		return s.waitForTurnWithTimeout(threadID, waitTimeout)
+	}
 	return s.waitForTurn(threadID)
+}
+
+type turnWaitResult struct {
+	status string
+	err    error
+}
+
+func (s *appSession) waitForTurnWithTimeout(threadID string, timeout time.Duration) (string, error) {
+	done := make(chan turnWaitResult, 1)
+	go func() {
+		status, err := s.waitForTurn(threadID)
+		done <- turnWaitResult{status: status, err: err}
+	}()
+
+	select {
+	case result := <-done:
+		return result.status, result.err
+	case <-time.After(timeout):
+		return "wait_timeout", nil
+	}
 }
 
 func (s *appSession) waitForTurn(threadID string) (string, error) {
@@ -855,6 +903,9 @@ func (s *appSession) waitForTurn(threadID string) (string, error) {
 		}
 		if resp.Method == "turn/failed" || resp.Method == "turn/error" {
 			return "failed", nil
+		}
+		if resp.Method == "turn/interrupted" || resp.Method == "turn/cancelled" || resp.Method == "turn/canceled" {
+			return "interrupted", nil
 		}
 	}
 	if err := s.stdout.Err(); err != nil {
