@@ -16,9 +16,13 @@ Use this when you need to:
 
 - Find a Codex thread by title or preview text.
 - Read one thread's current title and project cwd.
+- Read the last user/assistant exchange and turn status.
 - Create a new project-scoped thread with an initial kickoff message.
+- Create a Leading Edge thread with the standard `LE | Role | Lane` title and cwd.
 - Send a message to an existing thread.
 - Rename a thread safely, for example to add a PR number or ownership label.
+- Write a small JSON receipt for thread mutations.
+- Check the local Codex app-server bridge with `doctor`.
 - Do the above from a mobile-driven Codex session by running shell commands on the local Mac.
 
 Do not use it as a general Codex automation platform. It is deliberately small and local-only.
@@ -38,6 +42,7 @@ It only uses the local Codex app-server methods:
 
 - `thread/list`
 - `thread/read`
+- `thread/resume`
 - `thread/start`
 - `turn/start`
 - `thread/name/set`
@@ -93,6 +98,12 @@ Read the exact thread:
 codex-threadctl read --id 019...
 ```
 
+Check the latest exchange:
+
+```bash
+codex-threadctl last --id 019...
+```
+
 Create a project-scoped thread with a kickoff:
 
 ```bash
@@ -102,11 +113,22 @@ codex-threadctl create \
   --message-file kickoff.md
 ```
 
+Create a Leading Edge thread with the standard cwd/title shape:
+
+```bash
+codex-threadctl le-create \
+  --role Naomi \
+  --lane 'Project Coordinator Manager' \
+  --message-file kickoff.md
+```
+
 Send a follow-up to an existing thread:
 
 ```bash
 codex-threadctl send \
   --id 019... \
+  --expect-title 'LE | Naomi | Project Coordinator Manager' \
+  --expect-cwd /absolute/project/root \
   --message-file handoff.md
 ```
 
@@ -183,6 +205,20 @@ Use JSON when another script needs the result:
 codex-threadctl read --id 019... --json
 ```
 
+### `last`
+
+Read the last turn summary:
+
+```bash
+codex-threadctl last --id 019...
+```
+
+This shows the thread title, cwd, last turn status, last user message, and last assistant message. Use JSON for scripts:
+
+```bash
+codex-threadctl last --id 019... --json
+```
+
 ### `create`
 
 Create a new thread, set its title, and start a kickoff turn:
@@ -191,7 +227,8 @@ Create a new thread, set its title, and start a kickoff turn:
 codex-threadctl create \
   --cwd /absolute/path/to/project \
   --title 'LE | Role | Lane Name' \
-  --message-file kickoff.md
+  --message-file kickoff.md \
+  --receipt thread-create-receipt.json
 ```
 
 Use inline text for short messages:
@@ -220,10 +257,16 @@ codex-threadctl create \
 Send a message to an existing thread:
 
 ```bash
-codex-threadctl send --id 019... --message-file handoff.md
+codex-threadctl send \
+  --id 019... \
+  --expect-title 'LE | Role | Lane Name' \
+  --expect-cwd /absolute/path/to/project \
+  --message-file handoff.md
 ```
 
-When `--cwd` is omitted, `send` reads the target thread and uses that thread's cwd. Override it only when you know the thread metadata is incomplete:
+Use `--expect-title` and `--expect-cwd` whenever possible. They fail closed when mobile context is stale.
+
+When `--cwd` is omitted, `send` resumes the target thread and uses that thread's cwd. Override it only when you know the thread metadata is incomplete:
 
 ```bash
 codex-threadctl send \
@@ -233,6 +276,24 @@ codex-threadctl send \
 ```
 
 Like `create`, `send` waits for completion before exiting.
+
+### `le-create`
+
+Create a thread in the standard Leading Edge project hub:
+
+```bash
+codex-threadctl le-create \
+  --role Naomi \
+  --lane 'Project Coordinator Manager' \
+  --message-file kickoff.md
+```
+
+Defaults:
+
+- cwd: `/Users/ernie/Documents/GitHub/clinvision-v2-leading-edge-worktrees`
+- title: `LE | <Role> | <Lane>`
+
+This does not edit `role-worktree-map.json`; it only creates the Codex thread. Use Vivian/role-map workflow for source-controlled map updates.
 
 ### `rename`
 
@@ -252,6 +313,17 @@ codex-threadctl rename \
   --dry-run
 ```
 
+Then apply with `--confirm`; add `--receipt` when you want an audit file:
+
+```bash
+codex-threadctl rename \
+  --id 019... \
+  --name 'LE | Role | PR #124 - Deployment Proof' \
+  --expect-current 'LE | Role | Runtime Evidence' \
+  --receipt rename-receipt.json \
+  --confirm
+```
+
 If the current title differs, the command fails:
 
 ```text
@@ -259,6 +331,22 @@ error: current title mismatch: expected "...", got "..."
 ```
 
 That is intentional. It prevents stale mobile context from renaming the wrong thing.
+
+### `doctor`
+
+Check the local bridge:
+
+```bash
+codex-threadctl doctor
+```
+
+JSON output:
+
+```bash
+codex-threadctl doctor --json
+```
+
+The doctor checks whether `codex` is on `PATH`, whether the local app-server initializes, and whether `thread/list` works.
 
 ## Mobile workflow
 
@@ -284,14 +372,19 @@ When mobile Codex cannot execute app thread tools:
    codex-threadctl read --id 019...
    ```
 
-5. Create or send only when you intend to start a real Codex turn:
+5. Create or send only when you intend to start a real Codex turn. Prefer guarded sends:
 
    ```bash
    codex-threadctl create --cwd /absolute/project/root --title 'LE | Role | Lane' --message-file kickoff.md
    ```
 
    ```bash
-   codex-threadctl send --id 019... --message-file handoff.md
+   codex-threadctl send \
+     --id 019... \
+     --expect-title 'LE | Role | Lane' \
+     --expect-cwd /absolute/project/root \
+     --message-file handoff.md \
+     --receipt handoff-receipt.json
    ```
 
 6. Dry-run the rename with `--expect-current`.
@@ -350,7 +443,7 @@ Expected when the thread was already renamed or you copied stale context. Run `r
 
 `codex-threadctl` is local-only. It starts `codex app-server --stdio` as a child process and communicates through stdin/stdout. It does not open ports, store tokens, read credentials, or run a daemon.
 
-The tool can create threads, send messages, and rename local Codex thread metadata. Treat those as real mutations. Use read-only commands first, and use rename `--dry-run` plus `--expect-current`.
+The tool can create threads, send messages, and rename local Codex thread metadata. Treat those as real mutations. Use read-only commands first. Use `send --expect-title --expect-cwd`; use rename `--dry-run` plus `--expect-current`.
 
 ## Development
 

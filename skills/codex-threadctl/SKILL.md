@@ -29,6 +29,12 @@ Read a specific thread before mutation:
 codex-threadctl read --id 019...
 ```
 
+Check the bridge before relying on it:
+
+```bash
+codex-threadctl doctor
+```
+
 Create a new thread only when the user explicitly asks for a user-owned Codex thread:
 
 ```bash
@@ -38,13 +44,32 @@ codex-threadctl create \
   --message-file kickoff.md
 ```
 
+For Leading Edge threads, prefer the helper:
+
+```bash
+codex-threadctl le-create \
+  --role Naomi \
+  --lane 'Project Coordinator Manager' \
+  --message-file kickoff.md
+```
+
 Send to an existing thread when the user asks for a handoff or update:
 
 ```bash
-codex-threadctl send --id 019... --message-file handoff.md
+codex-threadctl send \
+  --id 019... \
+  --expect-title 'LE | Role | Lane' \
+  --expect-cwd /absolute/project/root \
+  --message-file handoff.md
 ```
 
 `create` and `send` wait for the turn to complete before exiting. Keep kickoff and handoff messages concise when you need a fast mobile-safe coordination update.
+
+Use `last` after a handoff when you need turn-level readback:
+
+```bash
+codex-threadctl last --id 019...
+```
 
 Rename with dry-run first:
 
@@ -99,14 +124,28 @@ codex-threadctl create \
   --message-file /tmp/kickoff.md
 ```
 
+Create a Leading Edge thread:
+
+```bash
+codex-threadctl le-create \
+  --role Naomi \
+  --lane 'Project Coordinator Manager' \
+  --message-file /tmp/kickoff.md
+```
+
 Send a handoff:
 
 ```bash
-codex-threadctl send --id 019... --message-file /tmp/handoff.md
+codex-threadctl send \
+  --id 019... \
+  --expect-title 'LE | Naomi | Project Coordinator Manager' \
+  --expect-cwd /Users/ernie/Documents/GitHub/clinvision-v2-leading-edge-worktrees \
+  --message-file /tmp/handoff.md \
+  --receipt /tmp/threadctl-handoff-receipt.json
 ```
 
 ## Implementation Notes
 
-The helper starts `codex app-server --stdio`, sends `initialize`, then sends local app-server JSON-RPC methods such as `thread/list`, `thread/read`, `thread/start`, `turn/start`, and `thread/name/set`. It does not rely on the mobile app MCP thread tool handler.
+The helper starts `codex app-server --stdio`, sends `initialize`, then sends local app-server JSON-RPC methods such as `thread/list`, `thread/read`, `thread/resume`, `thread/start`, `turn/start`, and `thread/name/set`. It does not rely on the mobile app MCP thread tool handler.
 
 Prefer normal app thread tools when those handlers work. Use this skill as a fallback bridge for shell/mobile-safe thread coordination.
