@@ -132,6 +132,40 @@ codex-threadctl send \
   --message-file handoff.md
 ```
 
+### Write handoffs as single packets
+
+When sending a handoff from a coordinator thread, prefer one actionable packet instead of a broad status dump. This keeps the source thread usable and prevents important side items from getting buried.
+
+A good handoff packet has:
+
+- one packet type: `Dispatch`, `Decision`, `Evidence Review`, `Risk`, or `Housekeeping`
+- one owner
+- one recommended action
+- one completion condition
+- one final control move: `Approve dispatch`, `Choose A/B`, `Wait for evidence`, `Keep blocked`, or `No action needed`
+- receipts only at the end
+
+Use plain English first:
+
+```text
+Current packet:
+SQLite merge readiness is blocked on Mara's VM smoke.
+
+Why this matters:
+The stack may be locally ready, but it should not merge until the VM proof lands.
+
+Recommended action:
+Run one mock-only VM smoke against PR #51 at e506d15c.
+
+Completion condition:
+Report PASS/BLOCKED/FAIL with source SHA, dirty state, vm-doctor, SQLCipher readiness, and fixture evidence.
+
+Control move:
+Wait for evidence
+```
+
+Avoid using `send` as a hidden workflow engine. Dispatch the packet, write a receipt when useful, then return control to the source thread unless the user explicitly asks you to watch the target thread live.
+
 Dry-run the rename:
 
 ```bash

@@ -65,6 +65,35 @@ codex-threadctl send \
 
 `create` and `send` wait for the turn to complete before exiting. Keep kickoff and handoff messages concise when you need a fast mobile-safe coordination update.
 
+For coordinator handoffs, use a single actionable packet. Do not send a broad dashboard unless the user explicitly asks for one.
+
+Packet shape:
+
+```text
+Packet type:
+<Dispatch | Decision | Evidence Review | Risk | Housekeeping>
+
+Current packet:
+<one related bundle the target can act on>
+
+Why this matters:
+<why this is the next useful move>
+
+Recommended action:
+<one action, decision, review, or hold>
+
+Completion condition:
+<what makes this packet done>
+
+Control move:
+<Approve dispatch | Choose A/B | Wait for evidence | Keep blocked | No action needed>
+
+Receipts:
+<only the exact facts needed to trust this packet>
+```
+
+After sending a packet, return control to the source thread unless the user explicitly asks you to watch the target turn live. Do not leave the source thread blocked on long specialist work.
+
 Use `last` after a handoff when you need turn-level readback:
 
 ```bash
