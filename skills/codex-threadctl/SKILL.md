@@ -73,6 +73,9 @@ Packet shape:
 Packet type:
 <Dispatch | Decision | Evidence Review | Risk | Housekeeping>
 
+Product alignment:
+<final product outcome served, product pillar, work type, why now, and cost of not doing it>
+
 Current packet:
 <one related bundle the target can act on>
 
@@ -93,6 +96,8 @@ Receipts:
 ```
 
 After sending a packet, return control to the source thread unless the user explicitly asks you to watch the target turn live. Do not leave the source thread blocked on long specialist work.
+
+If the project has a local North Star, product charter, PRD replacement, or mission document, align the packet to it before dispatch. Ask what final outcome the packet serves, which product pillar it moves, whether it is direct progress/enabling work/risk reduction/housekeeping, why it matters now, what gets worse if skipped, and whether it needs a simplification/product challenge. If it cannot answer those questions, park it, rewrite it, or convert it into a challenge/review packet.
 
 For coordinator threads, treat packets as a queue:
 
@@ -121,7 +126,7 @@ The sweep should produce one of:
 - a risk packet that needs attention before the blocker clears
 - a clear statement that no safe adjacent work should move
 
-When a project changes how coordinator threads communicate, dispatch, queue packets, run heartbeat, or sweep for next work, update the project-local coordinator template first if one exists. If the behavior is generic to `codex-threadctl` handoffs, update both `README.md` and this skill file in the public repo, validate project-local routing checks, review the diff, commit, push, and report back as one housekeeping packet. Do not leave the public guidance stale when the change affects `send`, handoff shape, packet queues, heartbeat, or project sweep behavior.
+When a project changes how coordinator threads communicate, dispatch, queue packets, run heartbeat, or sweep for next work, update the project-local coordinator template first if one exists. If the behavior is generic to `codex-threadctl` handoffs, update both `README.md` and this skill file in the public repo, validate project-local routing checks, review the diff, commit, push, and report back as one housekeeping packet. Do not leave the public guidance stale when the change affects `send`, handoff shape, packet queues, heartbeat, or project sweep behavior. If the change affects product direction or alignment gates, update the project-local North Star first or explicitly say why it does not change.
 
 Closeout examples:
 

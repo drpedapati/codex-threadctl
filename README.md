@@ -139,6 +139,7 @@ When sending a handoff from a coordinator thread, prefer one actionable packet i
 A good handoff packet has:
 
 - one packet type: `Dispatch`, `Decision`, `Evidence Review`, `Risk`, or `Housekeeping`
+- one product alignment statement, if the project has a North Star or product charter
 - one owner
 - one recommended action
 - one completion condition
@@ -148,6 +149,9 @@ A good handoff packet has:
 Use plain English first:
 
 ```text
+Product alignment:
+This reduces risk for the durable evidence pillar of the pilot product. Without it, the merge train can move before VM evidence is trustworthy.
+
 Current packet:
 SQLite merge readiness is blocked on Mara's VM smoke.
 
@@ -165,6 +169,21 @@ Wait for evidence
 ```
 
 Avoid using `send` as a hidden workflow engine. Dispatch the packet, write a receipt when useful, then return control to the source thread unless the user explicitly asks you to watch the target thread live.
+
+### Align packets to the project North Star
+
+If a project has a local North Star, product charter, PRD replacement, or mission document, coordinator packets should align to it before dispatch. Do not use alignment language to justify busywork after the fact.
+
+Ask:
+
+- What final product outcome does this serve?
+- Which product pillar does this move?
+- Is this direct product progress, enabling work, risk reduction, or housekeeping?
+- Why now?
+- What gets worse or stays blocked if we do not do it?
+- Does this need a simplification/product challenge before it moves?
+
+If the packet cannot answer those questions, park it, rewrite it, or convert it into a challenge/review packet.
 
 ### Run coordinator threads as packet queues
 
@@ -235,6 +254,7 @@ Use this workflow:
 8. Report back as one housekeeping packet with the commit hash, validation result, and next packet.
 
 Do not leave the public thread-control guidance stale when the change affects `send`, handoff shape, packet queues, heartbeat, or project sweep behavior.
+If the change affects product direction or alignment gates, update the project-local North Star first or explicitly say why it does not change.
 
 Dry-run the rename:
 
