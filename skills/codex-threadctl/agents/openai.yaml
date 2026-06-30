@@ -1,0 +1,3 @@
+display_name: Codex Thread Control
+short_description: Shell bridge for Codex thread metadata
+default_prompt: Use codex-threadctl to safely list, audit, and rename Codex threads from shell access.
