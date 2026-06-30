@@ -217,6 +217,18 @@ codex-threadctl send \
   --receipt /tmp/threadctl-handoff-receipt.json
 ```
 
+Write coordinator handoffs as one actionable packet, not a broad dashboard. If the project has a North Star, product charter, or mission document, include a behavior-centered goal chain:
+
+```text
+Goal chain:
+<current action>
+  -> <proximal product capability>
+  -> <user behavior enabled>
+  -> <North Star outcome>
+```
+
+The user-behavior line is required for meaningful alignment. If the handoff cannot name what a user, reviewer, operator, developer, or coordinator can do differently because of the packet, park it, rewrite it, or convert it into a challenge/review packet.
+
 ## ClinVision Leading Edge Pattern
 
 For ClinVision Leading Edge work, thread names use a compact routing prefix:

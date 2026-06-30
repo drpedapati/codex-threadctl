@@ -139,7 +139,8 @@ When sending a handoff from a coordinator thread, prefer one actionable packet i
 A good handoff packet has:
 
 - one packet type: `Dispatch`, `Decision`, `Evidence Review`, `Risk`, or `Housekeeping`
-- one product alignment statement, if the project has a North Star or product charter
+- one behavior-centered goal chain, if the project has a North Star or product charter
+- one product alignment statement
 - one owner
 - one recommended action
 - one completion condition
@@ -149,6 +150,12 @@ A good handoff packet has:
 Use plain English first:
 
 ```text
+Goal chain:
+Run PR #51 VM smoke
+  -> trustworthy durable-evidence proof on the target runtime
+  -> reviewer can decide whether the SQLite stack is safe to merge
+  -> ClinVision pilot workflows have auditable evidence instead of loose screenshots
+
 Product alignment:
 This reduces risk for the durable evidence pillar of the pilot product. Without it, the merge train can move before VM evidence is trustworthy.
 
@@ -174,11 +181,23 @@ Avoid using `send` as a hidden workflow engine. Dispatch the packet, write a rec
 
 If a project has a local North Star, product charter, PRD replacement, or mission document, coordinator packets should align to it before dispatch. Do not use alignment language to justify busywork after the fact.
 
+Prefer a visible goal chain before the product alignment statement:
+
+```text
+<current action>
+  -> <proximal product capability>
+  -> <user behavior enabled>
+  -> <North Star outcome>
+```
+
+The third line must name the behavior this enables for a user, reviewer, operator, developer, or coordinator. If a packet cannot name a behavior, park it, rewrite it, or convert it into a challenge/review packet.
+
 Ask:
 
 - What final product outcome does this serve?
 - Which product pillar does this move?
 - Is this direct product progress, enabling work, risk reduction, or housekeeping?
+- What user behavior does this enable?
 - Why now?
 - What gets worse or stays blocked if we do not do it?
 - Does this need a simplification/product challenge before it moves?
