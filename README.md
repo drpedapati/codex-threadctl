@@ -277,11 +277,29 @@ The map should include:
 - production components
 - current evidence and evidence grade
 - gaps, blockers, and owners
+- progress drag / Cal check: anything currently increasing distance to production
 - sequencing: first, parallel, parked, do-not-touch
 - behavior map: current action -> capability -> user behavior -> North Star
 - candidate next packet
 
 Use it to answer: what is the shortest evidenced path to a real user safely using the product?
+
+The progress drag / Cal check is mandatory. It asks whether work that looks active is making production farther away. Check for repeated retries without new evidence, broad work where a narrow extract would work, dirty local changes in the wrong lane, build/deploy policy changes mixed into feature work, stale or duplicate threads receiving packets, process/tooling work replacing product progress, "almost done" work that never becomes commit/PR/deploy/evidence, features that cannot name a North Star user behavior, and work that should be parked, deleted, closed, or handed off instead of fixed.
+
+Use this shape:
+
+```text
+Progress Drag / Cal Check:
+<No obvious drag, continue. | Yes: specific drag>
+
+Why it matters:
+<how this blocks or lengthens the path to deployed/usable product>
+
+Recommended correction:
+<delete | narrow | park | finish | separate | hand off | stop retrying | ask PI>
+```
+
+If the check finds drag, the next packet should usually be the correction unless a higher-severity safety or production blocker exists.
 
 ### Run coordinator threads as packet queues
 

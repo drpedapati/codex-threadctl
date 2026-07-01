@@ -178,6 +178,33 @@ The sweep should produce one of:
 - a risk packet that needs attention before the blocker clears
 - a clear statement that no safe adjacent work should move
 
+For production-distance reconstruction, always include a Progress Drag / Cal Check. Its job is to detect work that looks active but is increasing distance to production:
+
+- repeated retries without new evidence
+- broad implementation when a narrow extract would work
+- local dirty changes in the wrong lane
+- build/deploy policy changes mixed into feature work
+- stale or duplicate threads receiving active packets
+- tools or process work replacing product progress
+- "almost done" work that never becomes commit, PR, deploy, or evidence
+- features that cannot name a North Star user behavior
+- work that should be parked, deleted, closed, or handed off instead of fixed
+
+Use this shape:
+
+```text
+Progress Drag / Cal Check:
+<No obvious drag, continue. | Yes: specific drag>
+
+Why it matters:
+<how this blocks or lengthens the path to deployed/usable product>
+
+Recommended correction:
+<delete | narrow | park | finish | separate | hand off | stop retrying | ask PI>
+```
+
+If the check finds drag, the next packet should usually be the correction unless a higher-severity safety or production blocker exists.
+
 When a project changes how coordinator threads communicate, dispatch, queue packets, run heartbeat, or sweep for next work, update the project-local coordinator template first if one exists. If the behavior is generic to `codex-threadctl` handoffs, update both `README.md` and this skill file in the public repo, validate project-local routing checks, review the diff, commit, push, and report back as one housekeeping packet. Do not leave the public guidance stale when the change affects `send`, handoff shape, packet queues, heartbeat, or project sweep behavior. If the change affects product direction or alignment gates, update the project-local North Star first or explicitly say why it does not change.
 
 Closeout examples:
