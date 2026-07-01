@@ -21,6 +21,16 @@ Run read-only first:
 codex-threadctl list --search Project --limit 5
 ```
 
+When canonical/recovery/probe/stale thread risk matters, run a read-only audit before mutation:
+
+```bash
+codex-threadctl audit \
+  --search Naomi \
+  --expect-title 'LE-T | Naomi | Control Tower' \
+  --expect-cwd /absolute/project/root \
+  --stale-after 168h
+```
+
 If `list` fails, do not attempt mutation.
 
 Read a specific thread before mutation:
@@ -226,6 +236,25 @@ Return JSON for scripts:
 ```bash
 codex-threadctl list --search Vera --json
 ```
+
+Audit likely coordinator threads before relying on one canonical target:
+
+```bash
+codex-threadctl audit \
+  --search Naomi \
+  --limit 50 \
+  --expect-title 'LE-T | Naomi | Control Tower' \
+  --expect-cwd /absolute/path/to/project \
+  --stale-after 168h
+```
+
+Plain audit output is tab-separated:
+
+```text
+<thread-id>    <title>    <cwd>    <source>    <last-activity>    <flags>    <preview>
+```
+
+Flags include `canonical_title`, `canonical_cwd`, `title_mismatch`, `cwd_mismatch`, `recovery`, `probe`, `stale`, `missing_title`, `missing_cwd`, and `ok`. Use this before guarded sends when multiple similarly named threads exist or when a coordinator thread may be stale.
 
 Create a thread in a known project cwd:
 

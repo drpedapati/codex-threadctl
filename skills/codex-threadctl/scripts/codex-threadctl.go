@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const version = "0.6.0"
+const version = "0.7.0"
 
 const leadingEdgeCwd = "/Users/ernie/Documents/GitHub/clinvision-v2-leading-edge-worktrees"
 
@@ -102,6 +102,23 @@ type threadSummary struct {
 	UpdatedAt int64  `json:"updatedAt"`
 }
 
+type auditEntry struct {
+	ID           string   `json:"id"`
+	Title        string   `json:"title"`
+	Cwd          string   `json:"cwd"`
+	Source       string   `json:"source"`
+	UpdatedAt    int64    `json:"updatedAt"`
+	LastActivity string   `json:"lastActivity,omitempty"`
+	Flags        []string `json:"flags"`
+	Preview      string   `json:"preview,omitempty"`
+}
+
+type auditOptions struct {
+	ExpectTitle string
+	ExpectCwd   string
+	StaleAfter  time.Duration
+}
+
 type deliveryVerification struct {
 	Verified       bool   `json:"verified"`
 	Status         string `json:"status"`
@@ -133,6 +150,8 @@ func main() {
 	switch os.Args[1] {
 	case "list":
 		err = runList(os.Args[2:])
+	case "audit":
+		err = runAudit(os.Args[2:])
 	case "read":
 		err = runRead(os.Args[2:])
 	case "last":
@@ -166,6 +185,7 @@ func main() {
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
   codex-threadctl list [--search TERM] [--cwd PATH] [--limit N] [--json]
+  codex-threadctl audit [--search TERM] [--cwd PATH] [--limit N] [--expect-title TITLE] [--expect-cwd PATH] [--stale-after DURATION] [--json]
   codex-threadctl read --id THREAD_ID [--json]
   codex-threadctl last --id THREAD_ID [--json]
   codex-threadctl create --cwd PATH --title TITLE (--message TEXT|--message-file PATH) [--receipt PATH] [--json]
@@ -179,6 +199,7 @@ func usage() {
 Examples:
   codex-threadctl list --search Project --limit 1
   codex-threadctl list --cwd /absolute/project/root --limit 100
+  codex-threadctl audit --search Naomi --expect-title 'LE-T | Naomi | Control Tower' --expect-cwd /absolute/project/root --stale-after 168h
   codex-threadctl read --id 019...
   codex-threadctl last --id 019...
   codex-threadctl create --cwd /absolute/project/root --title 'LE | Naomi | Coordinator' --message-file kickoff.md
@@ -229,6 +250,74 @@ func runList(args []string) error {
 		}
 		preview := compact(t.Preview, 160)
 		fmt.Printf("%s\t%s\t%s\t%s\n", t.ID, name, t.Cwd, preview)
+	}
+	return nil
+}
+
+func runAudit(args []string) error {
+	fs := flag.NewFlagSet("audit", flag.ContinueOnError)
+	search := fs.String("search", "", "substring search term")
+	cwd := fs.String("cwd", "", "exact cwd filter")
+	limit := fs.Int("limit", 50, "maximum threads to return")
+	expectTitle := fs.String("expect-title", "", "optional expected canonical title")
+	expectCwd := fs.String("expect-cwd", "", "optional expected canonical cwd")
+	staleAfter := fs.Duration("stale-after", 0, "flag threads with no activity after this duration, for example 168h")
+	asJSON := fs.Bool("json", false, "emit JSON result")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *limit <= 0 {
+		return errors.New("audit requires --limit > 0")
+	}
+	if *staleAfter < 0 {
+		return errors.New("audit requires --stale-after >= 0")
+	}
+
+	params := map[string]any{
+		"limit": uint32(*limit),
+	}
+	if *search != "" {
+		params["searchTerm"] = *search
+	}
+	if *cwd != "" {
+		params["cwd"] = *cwd
+	}
+
+	raw, err := call("thread/list", params)
+	if err != nil {
+		return err
+	}
+	var result threadListResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return err
+	}
+
+	now := time.Now()
+	opts := auditOptions{
+		ExpectTitle: *expectTitle,
+		ExpectCwd:   *expectCwd,
+		StaleAfter:  *staleAfter,
+	}
+	entries := make([]auditEntry, 0, len(result.Data))
+	for _, t := range result.Data {
+		entries = append(entries, auditThread(t, opts, now))
+	}
+	if *asJSON {
+		return printJSON(map[string]any{
+			"threads": entries,
+			"count":   len(entries),
+		})
+	}
+	for _, entry := range entries {
+		fmt.Printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			entry.ID,
+			displayName(entry.Title),
+			entry.Cwd,
+			entry.Source,
+			entry.LastActivity,
+			strings.Join(entry.Flags, ","),
+			compact(entry.Preview, 120),
+		)
 	}
 	return nil
 }
@@ -888,6 +977,73 @@ func errorDetail(err error, ok string) string {
 		return ok
 	}
 	return err.Error()
+}
+
+func auditThread(t threadSummary, opts auditOptions, now time.Time) auditEntry {
+	flags := []string{}
+	title := strings.TrimSpace(t.Name)
+	cwd := strings.TrimSpace(t.Cwd)
+	if title == "" {
+		flags = append(flags, "missing_title")
+	}
+	if cwd == "" {
+		flags = append(flags, "missing_cwd")
+	}
+	if opts.ExpectTitle != "" {
+		if t.Name == opts.ExpectTitle {
+			flags = append(flags, "canonical_title")
+		} else {
+			flags = append(flags, "title_mismatch")
+		}
+	}
+	if opts.ExpectCwd != "" {
+		if t.Cwd == opts.ExpectCwd {
+			flags = append(flags, "canonical_cwd")
+		} else {
+			flags = append(flags, "cwd_mismatch")
+		}
+	}
+	text := strings.ToLower(t.Name + " " + t.Preview)
+	if strings.Contains(text, "recover") || strings.Contains(text, "recovery") {
+		flags = append(flags, "recovery")
+	}
+	if strings.Contains(text, "probe") || strings.Contains(text, "smoke") || strings.Contains(text, "visibility") {
+		flags = append(flags, "probe")
+	}
+	last := threadTime(t.UpdatedAt)
+	if opts.StaleAfter > 0 && !last.IsZero() && now.Sub(last) > opts.StaleAfter {
+		flags = append(flags, "stale")
+	}
+	if len(flags) == 0 {
+		flags = append(flags, "ok")
+	}
+	return auditEntry{
+		ID:           t.ID,
+		Title:        t.Name,
+		Cwd:          t.Cwd,
+		Source:       t.Source,
+		UpdatedAt:    t.UpdatedAt,
+		LastActivity: formatThreadTime(last),
+		Flags:        flags,
+		Preview:      compact(t.Preview, 240),
+	}
+}
+
+func threadTime(v int64) time.Time {
+	if v <= 0 {
+		return time.Time{}
+	}
+	if v > 1_000_000_000_000 {
+		return time.UnixMilli(v).UTC()
+	}
+	return time.Unix(v, 0).UTC()
+}
+
+func formatThreadTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format(time.RFC3339)
 }
 
 func printJSON(v any) error {

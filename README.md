@@ -15,6 +15,7 @@ If you still have shell access to the same Mac that runs Codex Desktop, `codex-t
 Use this when you need to:
 
 - Find a Codex thread by title or preview text.
+- Audit thread title/cwd/source/activity metadata for stale, probe, recovery, and mismatch risks.
 - Read one thread's current title and project cwd.
 - Read the last user/assistant exchange and turn status.
 - Create a new project-scoped thread with an initial kickoff message.
@@ -90,6 +91,16 @@ Always start with read-only:
 
 ```bash
 codex-threadctl list --search "Project" --limit 5
+```
+
+Audit likely coordinator threads before relying on one canonical target:
+
+```bash
+codex-threadctl audit \
+  --search Naomi \
+  --expect-title 'LE-T | Naomi | Control Tower' \
+  --expect-cwd /absolute/project/root \
+  --stale-after 168h
 ```
 
 Read the exact thread:
@@ -179,6 +190,8 @@ Wait for evidence
 Avoid using `send` as a hidden workflow engine. Dispatch the packet, write a receipt when useful, then return control to the source thread unless the user explicitly asks you to watch the target thread live.
 
 Starting in `0.6.0`, normal `send` verifies that the target thread's latest visible user message matches the sent message. If readback cannot prove that, the command returns `delivery_unverified` instead of a success-shaped receipt. `--no-wait` is weaker by design: it reports `request_started`, skips delivery verification, and must not be treated as a completed dispatch.
+
+Starting in `0.7.0`, `audit` provides a read-only coordinator check for title, cwd, source, activity, stale/probe/recovery flags, and expected title/cwd mismatches before relying on a thread as canonical.
 
 `send` delivery is not the same as work success. A turn can land and do useful work even if the local waiter times out or the target turn ends as `interrupted`. Use `--wait-timeout` for bounded waits. Use `smoke-send` before critical handoffs when you need to prove that an existing thread can receive a marker and reply with an ACK.
 
@@ -467,6 +480,27 @@ Plain output is tab-separated:
 ```text
 <thread-id>    <title>    <cwd>    <preview>
 ```
+
+### `audit`
+
+Audit thread metadata using the same read-only app-server list call:
+
+```bash
+codex-threadctl audit \
+  --search Naomi \
+  --limit 50 \
+  --expect-title 'LE-T | Naomi | Control Tower' \
+  --expect-cwd /absolute/path/to/project \
+  --stale-after 168h
+```
+
+Plain output is tab-separated:
+
+```text
+<thread-id>    <title>    <cwd>    <source>    <last-activity>    <flags>    <preview>
+```
+
+Flags include `canonical_title`, `canonical_cwd`, `title_mismatch`, `cwd_mismatch`, `recovery`, `probe`, `stale`, `missing_title`, `missing_cwd`, and `ok`. Use `--json` when a coordinator script needs structured output.
 
 ### `read`
 
