@@ -64,7 +64,7 @@ codex-threadctl send \
   --wait-timeout 10m
 ```
 
-`create` and `send` wait for the turn to complete before exiting. Keep kickoff and handoff messages concise when you need a fast mobile-safe coordination update.
+`create` waits for the initial turn to complete before exiting. Normal `send` waits for the target turn up to the timeout and then verifies that the sent message is visible as the target thread's latest user message. Keep kickoff and handoff messages concise when you need a fast mobile-safe coordination update.
 
 For `send`, use bounded waits when the target may do real work:
 
@@ -84,7 +84,22 @@ codex-threadctl send \
   --no-wait
 ```
 
-`send` delivery is not the same as work success. If a send returns `started`, `wait_timeout`, or `interrupted`, run `last` and verify repo, PR, runtime, or evidence truth before redispatching.
+`--no-wait` is intentionally weak. It returns `request_started`, skips delivery verification, and must not be treated as a completed dispatch.
+
+Use `smoke-send` before critical handoffs or when a thread may be stale:
+
+```bash
+codex-threadctl smoke-send \
+  --id 019... \
+  --expect-title 'LE | Role | Lane' \
+  --expect-cwd /absolute/project/root \
+  --marker THREADCTL_SMOKE_20260701T003516Z \
+  --wait-timeout 2m
+```
+
+`smoke-send` passes only when the target thread's latest user message contains the marker and the assistant reply contains `ACK <marker>`.
+
+`send` delivery is not the same as work success. `delivery_verified` means the target thread received the latest user message. It does not mean the requested work succeeded. If a send returns `delivery_unverified`, `request_started`, `wait_timeout`, or `interrupted`, run `last` and verify repo, PR, runtime, or evidence truth before redispatching.
 
 For coordinator handoffs, use a single actionable packet. Do not send a broad dashboard unless the user explicitly asks for one.
 
@@ -109,6 +124,9 @@ Recommended action:
 Completion condition:
 <what makes this packet done>
 
+Return path:
+<exact command or instruction for sending PASS/BLOCKED/FAIL back to the coordinator thread>
+
 Control move:
 <Approve dispatch | Choose A/B | Wait for evidence | Keep blocked | No action needed>
 
@@ -116,7 +134,7 @@ Receipts:
 <only the exact facts needed to trust this packet>
 ```
 
-After sending a packet, return control to the source thread unless the user explicitly asks you to watch the target turn live. Do not leave the source thread blocked on long specialist work.
+After sending a packet, return control to the source thread unless the user explicitly asks you to watch the target turn live. Do not leave the source thread blocked on long specialist work. For project coordination, do not close the packet on outbound send alone; close it only when the target returns PASS/BLOCKED/FAIL or independent repo/runtime/evidence truth proves the outcome.
 
 If the project has a local North Star, product charter, PRD replacement, or mission document, align the packet to it before dispatch. Ask what final outcome the packet serves, which product pillar it moves, whether it is direct progress/enabling work/risk reduction/housekeeping, why it matters now, what gets worse if skipped, and whether it needs a simplification/product challenge. If it cannot answer those questions, park it, rewrite it, or convert it into a challenge/review packet.
 

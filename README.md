@@ -178,7 +178,22 @@ Wait for evidence
 
 Avoid using `send` as a hidden workflow engine. Dispatch the packet, write a receipt when useful, then return control to the source thread unless the user explicitly asks you to watch the target thread live.
 
-`send` delivery is not the same as work success. A turn can land and do useful work even if the local waiter times out or the target turn ends as `interrupted`. Use `--wait-timeout` for bounded waits, or `--no-wait` when you only want to dispatch and then do explicit readback.
+Starting in `0.6.0`, normal `send` verifies that the target thread's latest visible user message matches the sent message. If readback cannot prove that, the command returns `delivery_unverified` instead of a success-shaped receipt. `--no-wait` is weaker by design: it reports `request_started`, skips delivery verification, and must not be treated as a completed dispatch.
+
+`send` delivery is not the same as work success. A turn can land and do useful work even if the local waiter times out or the target turn ends as `interrupted`. Use `--wait-timeout` for bounded waits. Use `smoke-send` before critical handoffs when you need to prove that an existing thread can receive a marker and reply with an ACK.
+
+For project coordination, include an explicit return path in the packet. A strong packet tells the target thread how to send PASS/BLOCKED/FAIL back to the coordinator with `codex-threadctl send`. The packet is not closed by the outbound send receipt; it is closed by the return message or by independent repo/runtime/evidence truth.
+
+Roundtrip smoke example:
+
+```bash
+codex-threadctl smoke-send \
+  --id 019... \
+  --expect-title 'LE-M | Mara | VM1 Build & Runtime Evidence' \
+  --expect-cwd /absolute/project/root \
+  --marker MARA_VISIBILITY_20260701T003130Z \
+  --wait-timeout 2m
+```
 
 After an ambiguous send, check:
 
@@ -195,7 +210,10 @@ Classify the outcome from durable state:
 - `interrupted + no durable side effects`: resume or redispatch cautiously.
 - `interrupted + local dirty work`: send a continuation packet; do not restart.
 - `interrupted + pushed/PR clean`: close the packet from repo/PR/evidence truth.
-- `started` or `wait_timeout`: delivery is not work success; run readback and external checks.
+- `delivery_verified`: the latest visible user message matched the sent message; this is delivery proof only, not work success.
+- `delivery_unverified`: do not treat the handoff as sent; run `last`, try `smoke-send`, or retire the target thread if it is stale.
+- `request_started`: `--no-wait` only asked Codex to start a turn; verify separately before relying on it.
+- `wait_timeout`: delivery may have been verified, but work did not finish within the local wait.
 
 ### Align packets to the project North Star
 
@@ -546,7 +564,22 @@ codex-threadctl send \
   --message 'Status request'
 ```
 
-Like `create`, `send` waits for completion before exiting. Use `--wait-timeout 10m` to bound that wait, or `--no-wait` to start the turn and return immediately. A `started`, `wait_timeout`, or `interrupted` result requires `last` readback and external repo/PR/evidence checks before you call the work done.
+Like `create`, `send` waits for completion before exiting. Use `--wait-timeout 10m` to bound that wait. Normal `send` now verifies latest-user readback and returns `delivery_verified` only when the sent message is visible as the target thread's latest user message. If it returns `delivery_unverified`, do not treat the handoff as sent.
+
+Use `--no-wait` only when you intentionally want a weak fire-request mode. It returns `request_started`, skips delivery verification, and writes a receipt that explicitly says `delivery_verified=false`.
+
+Use `smoke-send` to test thread communication before critical handoffs:
+
+```bash
+codex-threadctl smoke-send \
+  --id 019... \
+  --expect-title 'LE | Role | Lane Name' \
+  --expect-cwd /absolute/path/to/project \
+  --marker THREADCTL_SMOKE_20260701T003516Z \
+  --wait-timeout 2m
+```
+
+`smoke-send` passes only when the latest user message contains the marker and the assistant reply contains `ACK <marker>`.
 
 ### `le-create`
 

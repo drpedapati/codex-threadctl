@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -15,7 +17,7 @@ import (
 	"time"
 )
 
-const version = "0.5.0"
+const version = "0.6.0"
 
 const leadingEdgeCwd = "/Users/ernie/Documents/GitHub/clinvision-v2-leading-edge-worktrees"
 
@@ -100,6 +102,27 @@ type threadSummary struct {
 	UpdatedAt int64  `json:"updatedAt"`
 }
 
+type deliveryVerification struct {
+	Verified       bool   `json:"verified"`
+	Status         string `json:"status"`
+	TurnID         string `json:"turnId,omitempty"`
+	TurnStatus     string `json:"turnStatus,omitempty"`
+	MessageSHA256  string `json:"message_sha256"`
+	LastUserSHA256 string `json:"last_user_sha256,omitempty"`
+	LastUserSample string `json:"lastUserSample,omitempty"`
+}
+
+type roundtripVerification struct {
+	UserVerified        bool   `json:"userVerified"`
+	AssistantVerified   bool   `json:"assistantVerified"`
+	RoundtripVerified   bool   `json:"roundtripVerified"`
+	Status              string `json:"status"`
+	TurnID              string `json:"turnId,omitempty"`
+	TurnStatus          string `json:"turnStatus,omitempty"`
+	LastUserSample      string `json:"lastUserSample,omitempty"`
+	LastAssistantSample string `json:"lastAssistantSample,omitempty"`
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -120,6 +143,8 @@ func main() {
 		err = runLECreate(os.Args[2:])
 	case "send":
 		err = runSend(os.Args[2:])
+	case "smoke-send":
+		err = runSmokeSend(os.Args[2:])
 	case "rename":
 		err = runRename(os.Args[2:])
 	case "doctor":
@@ -146,6 +171,7 @@ func usage() {
   codex-threadctl create --cwd PATH --title TITLE (--message TEXT|--message-file PATH) [--receipt PATH] [--json]
   codex-threadctl le-create --role ROLE --lane LANE (--message TEXT|--message-file PATH) [--cwd PATH] [--receipt PATH] [--json]
   codex-threadctl send --id THREAD_ID (--message TEXT|--message-file PATH) [--expect-title TITLE] [--expect-cwd PATH] [--cwd PATH] [--receipt PATH] [--wait-timeout DURATION|--no-wait] [--json]
+  codex-threadctl smoke-send --id THREAD_ID [--marker MARKER] [--expect-title TITLE] [--expect-cwd PATH] [--cwd PATH] [--receipt PATH] [--wait-timeout DURATION] [--json]
   codex-threadctl rename --id THREAD_ID --name TITLE [--expect-current TITLE] [--receipt PATH] [--dry-run|--confirm]
   codex-threadctl doctor [--json]
   codex-threadctl version
@@ -158,6 +184,7 @@ Examples:
   codex-threadctl create --cwd /absolute/project/root --title 'LE | Naomi | Coordinator' --message-file kickoff.md
   codex-threadctl le-create --role Naomi --lane 'Project Coordinator Manager' --message-file kickoff.md
   codex-threadctl send --id 019... --expect-title 'LE | Naomi | Project Coordinator Manager' --expect-cwd /absolute/project/root --message 'Status request'
+  codex-threadctl smoke-send --id 019... --marker THREADCTL_SMOKE_20260701T003516Z
   codex-threadctl rename --id 019... --name 'V2 | Role | PR #123 - Short Lane' --expect-current 'V2 | Role | Old Lane' --dry-run
   codex-threadctl rename --id 019... --name 'V2 | Role | PR #123 - Short Lane' --expect-current 'V2 | Role | Old Lane' --confirm`)
 }
@@ -477,11 +504,35 @@ func runSend(args []string) error {
 	if err != nil {
 		return err
 	}
+	digest := messageDigest(text)
 	result := map[string]any{
-		"threadId": *id,
-		"title":    thread.Name,
-		"cwd":      targetCwd,
-		"turn":     turnStatus,
+		"threadId":       *id,
+		"title":          thread.Name,
+		"cwd":            targetCwd,
+		"turn":           turnStatus,
+		"message_sha256": digest,
+	}
+	if *noWait {
+		result["status"] = "request_started"
+		result["delivery_verified"] = false
+		result["delivery_status"] = "verification_skipped_no_wait"
+	} else {
+		verification, err := session.verifyLatestUserMessage(*id, text)
+		if err != nil {
+			result["status"] = "delivery_unverified"
+			result["delivery_verified"] = false
+			result["delivery_status"] = "readback_failed"
+			result["delivery_error"] = err.Error()
+		} else {
+			result["delivery"] = verification
+			result["delivery_verified"] = verification.Verified
+			result["delivery_status"] = verification.Status
+			if verification.Verified {
+				result["status"] = "delivery_verified"
+			} else {
+				result["status"] = "delivery_unverified"
+			}
+		}
 	}
 	if *receiptPath != "" {
 		if err := writeReceipt(*receiptPath, "send", result); err != nil {
@@ -489,14 +540,142 @@ func runSend(args []string) error {
 		}
 	}
 	if *asJSON {
-		return printJSON(result)
+		if err := printJSON(result); err != nil {
+			return err
+		}
+		if result["status"] == "delivery_unverified" {
+			return errors.New("delivery_unverified")
+		}
+		return nil
 	}
-	fmt.Printf("sent\t%s\n", *id)
+	fmt.Printf("%s\t%s\n", result["status"], *id)
 	fmt.Printf("title\t%s\n", displayName(thread.Name))
 	fmt.Printf("cwd\t%s\n", targetCwd)
 	fmt.Printf("turn\t%s\n", turnStatus)
+	fmt.Printf("message_sha256\t%s\n", digest)
+	fmt.Printf("delivery_verified\t%t\n", result["delivery_verified"])
+	if status, _ := result["delivery_status"].(string); status != "" {
+		fmt.Printf("delivery_status\t%s\n", status)
+	}
+	if *noWait {
+		fmt.Fprintln(os.Stderr, "note: --no-wait only means request_started; it is not durable delivery")
+	}
 	if turnStatus == "wait_timeout" || turnStatus == "interrupted" || turnStatus == "started" {
-		fmt.Fprintln(os.Stderr, "note: send delivery is not work success; run codex-threadctl last and verify repo/PR/evidence truth")
+		fmt.Fprintln(os.Stderr, "note: turn status is not work success; run codex-threadctl last and verify repo/PR/evidence truth")
+	}
+	if result["status"] == "delivery_unverified" {
+		return errors.New("delivery_unverified")
+	}
+	return nil
+}
+
+func runSmokeSend(args []string) error {
+	fs := flag.NewFlagSet("smoke-send", flag.ContinueOnError)
+	id := fs.String("id", "", "thread id")
+	cwd := fs.String("cwd", "", "optional cwd override; defaults to thread cwd")
+	expectTitle := fs.String("expect-title", "", "optional target title guard")
+	expectCwd := fs.String("expect-cwd", "", "optional target cwd guard")
+	marker := fs.String("marker", "", "marker text; generated when omitted")
+	receiptPath := fs.String("receipt", "", "optional JSON receipt path")
+	waitTimeout := fs.Duration("wait-timeout", 2*time.Minute, "maximum time to wait for assistant ACK")
+	asJSON := fs.Bool("json", false, "emit JSON result")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *id == "" {
+		return errors.New("smoke-send requires --id")
+	}
+	if *waitTimeout <= 0 {
+		return errors.New("smoke-send requires --wait-timeout > 0")
+	}
+	smokeMarker := strings.TrimSpace(*marker)
+	if smokeMarker == "" {
+		smokeMarker = "THREADCTL_SMOKE_" + time.Now().UTC().Format("20060102T150405Z")
+	}
+	text := fmt.Sprintf("codex-threadctl smoke-send marker: %s\n\nPlease reply with exactly: ACK %s", smokeMarker, smokeMarker)
+	sessionTimeout := *waitTimeout + 30*time.Second
+	if sessionTimeout < 60*time.Second {
+		sessionTimeout = 60 * time.Second
+	}
+	session, err := startSession(sessionTimeout)
+	if err != nil {
+		return err
+	}
+	defer session.close()
+
+	thread, err := session.resumeThread(*id)
+	if err != nil {
+		return fmt.Errorf("resume before smoke-send failed: %w", err)
+	}
+	if err := checkThreadGuards(thread, *expectTitle, *expectCwd); err != nil {
+		return err
+	}
+	targetCwd := *cwd
+	if targetCwd == "" {
+		targetCwd = thread.Cwd
+	}
+	if targetCwd == "" {
+		return errors.New("smoke-send requires --cwd because target thread has no cwd")
+	}
+
+	turnStatus, err := session.startTurnWithOptions(*id, targetCwd, text, true, *waitTimeout)
+	if err != nil {
+		return err
+	}
+	verification, err := session.verifyLatestRoundtrip(*id, smokeMarker)
+	result := map[string]any{
+		"threadId":       *id,
+		"title":          thread.Name,
+		"cwd":            targetCwd,
+		"marker":         smokeMarker,
+		"turn":           turnStatus,
+		"expected_ack":   "ACK " + smokeMarker,
+		"message_sha256": messageDigest(text),
+	}
+	if err != nil {
+		result["status"] = "fail"
+		result["delivery_verified"] = false
+		result["roundtrip_verified"] = false
+		result["delivery_status"] = "readback_failed"
+		result["delivery_error"] = err.Error()
+	} else {
+		result["delivery"] = verification
+		result["delivery_verified"] = verification.UserVerified
+		result["roundtrip_verified"] = verification.RoundtripVerified
+		result["delivery_status"] = verification.Status
+		if verification.RoundtripVerified {
+			result["status"] = "pass"
+		} else {
+			result["status"] = "fail"
+		}
+	}
+	if *receiptPath != "" {
+		if err := writeReceipt(*receiptPath, "smoke-send", result); err != nil {
+			return err
+		}
+	}
+	if *asJSON {
+		if err := printJSON(result); err != nil {
+			return err
+		}
+		if result["status"] != "pass" {
+			return errors.New("smoke-send failed")
+		}
+		return nil
+	}
+	fmt.Printf("status\t%s\n", result["status"])
+	fmt.Printf("threadId\t%s\n", *id)
+	fmt.Printf("title\t%s\n", displayName(thread.Name))
+	fmt.Printf("cwd\t%s\n", targetCwd)
+	fmt.Printf("turn\t%s\n", turnStatus)
+	fmt.Printf("marker\t%s\n", smokeMarker)
+	fmt.Printf("delivery_verified\t%t\n", result["delivery_verified"])
+	fmt.Printf("roundtrip_verified\t%t\n", result["roundtrip_verified"])
+	if status, _ := result["delivery_status"].(string); status != "" {
+		fmt.Printf("delivery_status\t%s\n", status)
+	}
+	if result["status"] != "pass" {
+		return errors.New("smoke-send failed")
 	}
 	return nil
 }
@@ -695,6 +874,15 @@ func itemText(item turnItem) string {
 	return strings.Join(parts, "\n")
 }
 
+func messageDigest(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:])
+}
+
+func textSample(text string) string {
+	return compact(strings.ReplaceAll(text, "\n", "\\n"), 240)
+}
+
 func errorDetail(err error, ok string) string {
 	if err == nil {
 		return ok
@@ -840,6 +1028,108 @@ func (s *appSession) resumeThread(id string) (threadSummary, error) {
 		return threadSummary{}, err
 	}
 	return result.Thread, nil
+}
+
+func (s *appSession) resumeFullThread(id string) (threadFull, error) {
+	raw, err := call("thread/resume", map[string]any{
+		"threadId":     id,
+		"includeTurns": true,
+	})
+	if err != nil {
+		return threadFull{}, err
+	}
+	var result threadFullReadResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return threadFull{}, err
+	}
+	return result.Thread, nil
+}
+
+func (s *appSession) verifyLatestUserMessage(threadID, expected string) (deliveryVerification, error) {
+	thread, err := s.resumeFullThread(threadID)
+	if err != nil {
+		return deliveryVerification{}, err
+	}
+	expectedDigest := messageDigest(expected)
+	verification := deliveryVerification{
+		Status:        "no_turns",
+		MessageSHA256: expectedDigest,
+	}
+	if len(thread.Turns) == 0 {
+		return verification, nil
+	}
+	turn := thread.Turns[len(thread.Turns)-1]
+	verification.TurnID = turn.ID
+	verification.TurnStatus = turn.Status
+	for _, item := range turn.Items {
+		if item.Type != "userMessage" {
+			continue
+		}
+		text := itemText(item)
+		if text == "" {
+			continue
+		}
+		lastDigest := messageDigest(text)
+		verification.LastUserSHA256 = lastDigest
+		verification.LastUserSample = textSample(text)
+		if lastDigest == expectedDigest {
+			verification.Verified = true
+			verification.Status = "latest_user_message_verified"
+		} else {
+			verification.Status = "latest_user_message_mismatch"
+		}
+	}
+	if verification.LastUserSHA256 == "" {
+		verification.Status = "latest_turn_missing_user_message"
+	}
+	return verification, nil
+}
+
+func (s *appSession) verifyLatestRoundtrip(threadID, marker string) (roundtripVerification, error) {
+	thread, err := s.resumeFullThread(threadID)
+	if err != nil {
+		return roundtripVerification{}, err
+	}
+	expectedAck := "ACK " + marker
+	verification := roundtripVerification{
+		Status: "no_turns",
+	}
+	if len(thread.Turns) == 0 {
+		return verification, nil
+	}
+	turn := thread.Turns[len(thread.Turns)-1]
+	verification.TurnID = turn.ID
+	verification.TurnStatus = turn.Status
+	for _, item := range turn.Items {
+		text := itemText(item)
+		if text == "" {
+			continue
+		}
+		switch item.Type {
+		case "userMessage":
+			verification.LastUserSample = textSample(text)
+			if strings.Contains(text, marker) {
+				verification.UserVerified = true
+			}
+		case "agentMessage":
+			verification.LastAssistantSample = textSample(text)
+			if strings.Contains(text, expectedAck) {
+				verification.AssistantVerified = true
+			}
+		}
+	}
+	verification.RoundtripVerified = verification.UserVerified && verification.AssistantVerified
+	switch {
+	case verification.RoundtripVerified:
+		verification.Status = "roundtrip_verified"
+	case !verification.UserVerified && !verification.AssistantVerified:
+		verification.Status = "marker_missing_from_user_and_assistant"
+	case !verification.UserVerified:
+		verification.Status = "marker_missing_from_user_message"
+	case !verification.AssistantVerified:
+		verification.Status = "ack_missing_from_assistant_message"
+	}
+	return verification, nil
 }
 
 func (s *appSession) startTurn(threadID, cwd, text string) (string, error) {
