@@ -28,8 +28,11 @@ codex-threadctl audit \
   --search Naomi \
   --expect-title 'LE-T | Naomi | Control Tower' \
   --expect-cwd /absolute/project/root \
-  --stale-after 168h
+  --stale-after 168h \
+  --role-map /absolute/project/root/role-worktree-map.json
 ```
+
+Treat `audit` as an input, not the only truth. With `--role-map`, it can flag `role_current`, `role_previous`, `role_status_<status>`, and `role_unmapped`; still cross-check suspicious threads with `last` before archive/rename decisions.
 
 If `list` fails, do not attempt mutation.
 

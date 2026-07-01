@@ -193,6 +193,8 @@ Starting in `0.6.0`, normal `send` verifies that the target thread's latest visi
 
 Starting in `0.7.0`, `audit` provides a read-only coordinator check for title, cwd, source, activity, stale/probe/recovery flags, and expected title/cwd mismatches before relying on a thread as canonical.
 
+Starting in `0.8.0`, `audit --role-map role-worktree-map.json` adds role-map-aware flags such as `role_current`, `role_previous`, `role_status_stale_broken`, and `role_unmapped`, so coordinator cleanup does not rely only on title/preview heuristics.
+
 `send` delivery is not the same as work success. A turn can land and do useful work even if the local waiter times out or the target turn ends as `interrupted`. Use `--wait-timeout` for bounded waits. Use `smoke-send` before critical handoffs when you need to prove that an existing thread can receive a marker and reply with an ACK.
 
 For project coordination, include an explicit return path in the packet. A strong packet tells the target thread how to send PASS/BLOCKED/FAIL back to the coordinator with `codex-threadctl send`. The packet is not closed by the outbound send receipt; it is closed by the return message or by independent repo/runtime/evidence truth.
@@ -491,7 +493,8 @@ codex-threadctl audit \
   --limit 50 \
   --expect-title 'LE-T | Naomi | Control Tower' \
   --expect-cwd /absolute/path/to/project \
-  --stale-after 168h
+  --stale-after 168h \
+  --role-map role-worktree-map.json
 ```
 
 Plain output is tab-separated:
@@ -500,7 +503,7 @@ Plain output is tab-separated:
 <thread-id>    <title>    <cwd>    <source>    <last-activity>    <flags>    <preview>
 ```
 
-Flags include `canonical_title`, `canonical_cwd`, `title_mismatch`, `cwd_mismatch`, `recovery`, `probe`, `stale`, `missing_title`, `missing_cwd`, and `ok`. Use `--json` when a coordinator script needs structured output.
+Flags include `canonical_title`, `canonical_cwd`, `title_mismatch`, `cwd_mismatch`, `recovery`, `probe`, `stale`, `archive_candidate`, `missing_title`, `missing_cwd`, and `ok`. With `--role-map`, audit also emits role-aware flags such as `role_current`, `role_previous`, `role_<role>`, `role_status_<status>`, and `role_unmapped`. Use `--json` when a coordinator script needs structured output.
 
 ### `read`
 

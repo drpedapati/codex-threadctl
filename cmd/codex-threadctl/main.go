@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const version = "0.7.0"
+const version = "0.8.0"
 
 const leadingEdgeCwd = "/Users/ernie/Documents/GitHub/clinvision-v2-leading-edge-worktrees"
 
@@ -117,6 +117,25 @@ type auditOptions struct {
 	ExpectTitle string
 	ExpectCwd   string
 	StaleAfter  time.Duration
+	RoleMap     map[string]roleMapThread
+}
+
+type roleMapThread struct {
+	Role     string
+	Status   string
+	Relation string
+}
+
+type roleWorktreeMap struct {
+	Entries []roleWorktreeEntry `json:"entries"`
+}
+
+type roleWorktreeEntry struct {
+	Role                 string `json:"role"`
+	Status               string `json:"status"`
+	ThreadID             string `json:"thread_id"`
+	PreviousThreadID     string `json:"previous_thread_id"`
+	PreviousThreadStatus string `json:"previous_thread_status"`
 }
 
 type deliveryVerification struct {
@@ -185,7 +204,7 @@ func main() {
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
   codex-threadctl list [--search TERM] [--cwd PATH] [--limit N] [--json]
-  codex-threadctl audit [--search TERM] [--cwd PATH] [--limit N] [--expect-title TITLE] [--expect-cwd PATH] [--stale-after DURATION] [--json]
+  codex-threadctl audit [--search TERM] [--cwd PATH] [--limit N] [--expect-title TITLE] [--expect-cwd PATH] [--stale-after DURATION] [--role-map PATH] [--json]
   codex-threadctl read --id THREAD_ID [--json]
   codex-threadctl last --id THREAD_ID [--json]
   codex-threadctl create --cwd PATH --title TITLE (--message TEXT|--message-file PATH) [--receipt PATH] [--json]
@@ -199,7 +218,7 @@ func usage() {
 Examples:
   codex-threadctl list --search Project --limit 1
   codex-threadctl list --cwd /absolute/project/root --limit 100
-  codex-threadctl audit --search Naomi --expect-title 'LE-T | Naomi | Control Tower' --expect-cwd /absolute/project/root --stale-after 168h
+  codex-threadctl audit --search Naomi --expect-title 'LE-T | Naomi | Control Tower' --expect-cwd /absolute/project/root --stale-after 168h --role-map role-worktree-map.json
   codex-threadctl read --id 019...
   codex-threadctl last --id 019...
   codex-threadctl create --cwd /absolute/project/root --title 'LE | Naomi | Coordinator' --message-file kickoff.md
@@ -262,6 +281,7 @@ func runAudit(args []string) error {
 	expectTitle := fs.String("expect-title", "", "optional expected canonical title")
 	expectCwd := fs.String("expect-cwd", "", "optional expected canonical cwd")
 	staleAfter := fs.Duration("stale-after", 0, "flag threads with no activity after this duration, for example 168h")
+	roleMapPath := fs.String("role-map", "", "optional role-worktree-map.json path for role-aware audit flags")
 	asJSON := fs.Bool("json", false, "emit JSON result")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -292,11 +312,20 @@ func runAudit(args []string) error {
 		return err
 	}
 
+	roleMap := map[string]roleMapThread(nil)
+	if *roleMapPath != "" {
+		roleMap, err = loadRoleMap(*roleMapPath)
+		if err != nil {
+			return err
+		}
+	}
+
 	now := time.Now()
 	opts := auditOptions{
 		ExpectTitle: *expectTitle,
 		ExpectCwd:   *expectCwd,
 		StaleAfter:  *staleAfter,
+		RoleMap:     roleMap,
 	}
 	entries := make([]auditEntry, 0, len(result.Data))
 	for _, t := range result.Data {
@@ -979,6 +1008,39 @@ func errorDetail(err error, ok string) string {
 	return err.Error()
 }
 
+func loadRoleMap(path string) (map[string]roleMapThread, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read role map: %w", err)
+	}
+	var roleMap roleWorktreeMap
+	if err := json.Unmarshal(b, &roleMap); err != nil {
+		return nil, fmt.Errorf("parse role map: %w", err)
+	}
+	threads := make(map[string]roleMapThread)
+	for _, entry := range roleMap.Entries {
+		if entry.ThreadID != "" {
+			threads[entry.ThreadID] = roleMapThread{
+				Role:     entry.Role,
+				Status:   entry.Status,
+				Relation: "role_current",
+			}
+		}
+		if entry.PreviousThreadID != "" {
+			status := entry.PreviousThreadStatus
+			if status == "" {
+				status = entry.Status
+			}
+			threads[entry.PreviousThreadID] = roleMapThread{
+				Role:     entry.Role,
+				Status:   status,
+				Relation: "role_previous",
+			}
+		}
+	}
+	return threads, nil
+}
+
 func auditThread(t threadSummary, opts auditOptions, now time.Time) auditEntry {
 	flags := []string{}
 	title := strings.TrimSpace(t.Name)
@@ -1014,6 +1076,22 @@ func auditThread(t threadSummary, opts auditOptions, now time.Time) auditEntry {
 	if opts.StaleAfter > 0 && !last.IsZero() && now.Sub(last) > opts.StaleAfter {
 		flags = append(flags, "stale")
 	}
+	if strings.HasPrefix(strings.ToLower(title), "archive candidate") {
+		flags = append(flags, "archive_candidate")
+	}
+	if opts.RoleMap != nil {
+		if roleThread, ok := opts.RoleMap[t.ID]; ok {
+			flags = append(flags, roleThread.Relation)
+			if roleThread.Role != "" {
+				flags = append(flags, "role_"+sanitizeFlag(roleThread.Role))
+			}
+			if roleThread.Status != "" {
+				flags = append(flags, "role_status_"+sanitizeFlag(roleThread.Status))
+			}
+		} else {
+			flags = append(flags, "role_unmapped")
+		}
+	}
 	if len(flags) == 0 {
 		flags = append(flags, "ok")
 	}
@@ -1027,6 +1105,24 @@ func auditThread(t threadSummary, opts auditOptions, now time.Time) auditEntry {
 		Flags:        flags,
 		Preview:      compact(t.Preview, 240),
 	}
+}
+
+func sanitizeFlag(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	var b strings.Builder
+	lastUnderscore := false
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastUnderscore = false
+			continue
+		}
+		if !lastUnderscore {
+			b.WriteByte('_')
+			lastUnderscore = true
+		}
+	}
+	return strings.Trim(b.String(), "_")
 }
 
 func threadTime(v int64) time.Time {
