@@ -216,7 +216,27 @@ codex-threadctl rename \
   --confirm
 ```
 
-Do not use this helper to delete, archive, or fork threads.
+Archive only after a read-only audit and dry-run, and only when the thread is clearly a probe, duplicate, or approved archive candidate:
+
+```bash
+codex-threadctl archive \
+  --id 019... \
+  --expect-title 'ARCHIVE CANDIDATE | Probe' \
+  --expect-cwd /absolute/project/root \
+  --dry-run
+```
+
+Then apply with confirmation:
+
+```bash
+codex-threadctl archive \
+  --id 019... \
+  --expect-title 'ARCHIVE CANDIDATE | Probe' \
+  --expect-cwd /absolute/project/root \
+  --confirm
+```
+
+Do not use this helper to delete or fork threads.
 
 ## Common Workflows
 

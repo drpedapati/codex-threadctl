@@ -33,7 +33,7 @@ Do not use it as a general Codex automation platform. It is deliberately small a
 `codex-threadctl` intentionally does not:
 
 - Fork threads.
-- Archive or delete threads.
+- Delete threads.
 - Expose a network service.
 - Manage remote hosts.
 - Bypass Codex authentication.

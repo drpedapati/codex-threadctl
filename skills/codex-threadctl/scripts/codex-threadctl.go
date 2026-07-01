@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const version = "0.8.0"
+const version = "0.9.0"
 
 const leadingEdgeCwd = "/Users/ernie/Documents/GitHub/clinvision-v2-leading-edge-worktrees"
 
@@ -185,6 +185,8 @@ func main() {
 		err = runSmokeSend(os.Args[2:])
 	case "rename":
 		err = runRename(os.Args[2:])
+	case "archive":
+		err = runArchive(os.Args[2:])
 	case "doctor":
 		err = runDoctor(os.Args[2:])
 	case "version":
@@ -212,6 +214,7 @@ func usage() {
   codex-threadctl send --id THREAD_ID (--message TEXT|--message-file PATH) [--expect-title TITLE] [--expect-cwd PATH] [--cwd PATH] [--receipt PATH] [--wait-timeout DURATION|--no-wait] [--json]
   codex-threadctl smoke-send --id THREAD_ID [--marker MARKER] [--expect-title TITLE] [--expect-cwd PATH] [--cwd PATH] [--receipt PATH] [--wait-timeout DURATION] [--json]
   codex-threadctl rename --id THREAD_ID --name TITLE [--expect-current TITLE] [--receipt PATH] [--dry-run|--confirm]
+  codex-threadctl archive --id THREAD_ID [--expect-title TITLE] [--expect-cwd PATH] [--receipt PATH] [--dry-run|--confirm]
   codex-threadctl doctor [--json]
   codex-threadctl version
 
@@ -226,7 +229,9 @@ Examples:
   codex-threadctl send --id 019... --expect-title 'LE | Naomi | Project Coordinator Manager' --expect-cwd /absolute/project/root --message 'Status request'
   codex-threadctl smoke-send --id 019... --marker THREADCTL_SMOKE_20260701T003516Z
   codex-threadctl rename --id 019... --name 'V2 | Role | PR #123 - Short Lane' --expect-current 'V2 | Role | Old Lane' --dry-run
-  codex-threadctl rename --id 019... --name 'V2 | Role | PR #123 - Short Lane' --expect-current 'V2 | Role | Old Lane' --confirm`)
+  codex-threadctl rename --id 019... --name 'V2 | Role | PR #123 - Short Lane' --expect-current 'V2 | Role | Old Lane' --confirm
+  codex-threadctl archive --id 019... --expect-title 'ARCHIVE CANDIDATE | Probe' --dry-run
+  codex-threadctl archive --id 019... --expect-title 'ARCHIVE CANDIDATE | Probe' --confirm`)
 }
 
 func runList(args []string) error {
@@ -856,6 +861,59 @@ func runRename(args []string) error {
 	fmt.Printf("renamed\t%s\n", *id)
 	fmt.Printf("before\t%s\n", before.Name)
 	fmt.Printf("after\t%s\n", after.Name)
+	return nil
+}
+
+func runArchive(args []string) error {
+	fs := flag.NewFlagSet("archive", flag.ContinueOnError)
+	id := fs.String("id", "", "thread id")
+	expectTitle := fs.String("expect-title", "", "optional current title guard")
+	expectCwd := fs.String("expect-cwd", "", "optional cwd guard")
+	receiptPath := fs.String("receipt", "", "optional JSON receipt path")
+	dryRun := fs.Bool("dry-run", false, "show intended archive without mutating")
+	confirm := fs.Bool("confirm", false, "required to archive thread")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *id == "" {
+		return errors.New("archive requires --id")
+	}
+	before, err := readThread(*id)
+	if err != nil {
+		return fmt.Errorf("read before archive failed: %w", err)
+	}
+	if *expectTitle != "" && before.Name != *expectTitle {
+		return fmt.Errorf("current title mismatch: expected %q, got %q", *expectTitle, before.Name)
+	}
+	if *expectCwd != "" && before.Cwd != *expectCwd {
+		return fmt.Errorf("cwd mismatch: expected %q, got %q", *expectCwd, before.Cwd)
+	}
+	if *dryRun {
+		fmt.Printf("dry-run\t%s\n", *id)
+		fmt.Printf("title\t%s\n", before.Name)
+		fmt.Printf("cwd\t%s\n", before.Cwd)
+		fmt.Printf("action\tarchive\n")
+		return nil
+	}
+	if !*confirm {
+		return errors.New("refusing to archive without --confirm")
+	}
+
+	if _, err := call("thread/archive", map[string]any{"threadId": *id}); err != nil {
+		return err
+	}
+	if *receiptPath != "" {
+		if err := writeReceipt(*receiptPath, "archive", map[string]any{
+			"threadId": *id,
+			"title":    before.Name,
+			"cwd":      before.Cwd,
+		}); err != nil {
+			return err
+		}
+	}
+	fmt.Printf("archived\t%s\n", *id)
+	fmt.Printf("title\t%s\n", before.Name)
+	fmt.Printf("cwd\t%s\n", before.Cwd)
 	return nil
 }
 
